@@ -1,4 +1,8 @@
-# FDDC2018金融算法挑战赛02－A股上市公司公告信息抽取
+# 大数据项目二 -- 金融文本信息提取
+
+## 参考
+
+https://github.com/dmjvictory/fddc-extraction-release.git
 
 ## 基本信息
 
@@ -15,13 +19,3 @@
 
 运行python环境为： python3.6
 NER部分采用 [pyltp](http://pyltp.readthedocs.io/zh_CN/develop/api.html) 需要下载相关模型文件并在app.py中配置相关模型目录路径 ner_model_dir_path
-
-
-```bash
-# 安装相关依赖
-pip install -r requirements.txt
-
-# 运行增减持抽取
-python app.py > result.txt
-
-```
