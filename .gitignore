@@ -112,3 +112,6 @@ target/
 *.zip
 .pytest_cache/
 .coverage
+
+# reuslts
+reuslts/

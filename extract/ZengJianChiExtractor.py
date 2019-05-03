@@ -12,9 +12,9 @@ from ner import NERTagger
 class ZengJianChiRecord(object):
     def __init__(self, shareholder_full_name, shareholder_short_name, finish_date,
                  share_price, share_num, share_num_after_chg, share_pcnt_after_chg):
-        # 股东
+        # 股东全称
         self.shareholderFullName = shareholder_full_name
-        # 股东
+        # 股东简称
         self.shareholderShortName = shareholder_short_name
         # 结束日期
         self.finishDate = finish_date
@@ -96,7 +96,7 @@ class ZengJianChiRecord(object):
         用于输出各项值
         '''
         self.normalize()
-        return "%s,\t%s,\t%s,\t%s,\t%s,\t%s,\t%s" % (
+        return "%s,%s,%s,%s,%s,%s,%s" % (
             self.shareholderFullName if self.shareholderFullName is not None else '',
             self.shareholderShortName if self.shareholderShortName is not None else '',
             self.finishDate if self.finishDate is not None else '',
@@ -113,8 +113,11 @@ class ZengJianChiExtractor(object):
         self.html_parser = HTMLParser.HTMLParser()
         self.config = None
         self.ner_tagger = NERTagger.NERTagger(ner_model_dir_path, ner_blacklist_file_path)
+        # 公司简称对应公司全称
         self.com_abbr_dict = {}
+        # 公司全称对应公司简称
         self.com_full_dict = {}
+        # 
         self.com_abbr_ner_dict = {}
 
         # 读取保存在 json 中的增减持配置文件
@@ -225,40 +228,36 @@ class ZengJianChiExtractor(object):
         # 返回结果
         return rs
 
-    def extract_from_paragraphs(self, paragraphs):
+    def extract_from_paragraph(self, paragraph):
         '''
+        从一个段落中进行抽取
         '''
-        self.clear_com_abbr_dict()
-        change_records = []
-        change_after_records = []
-        record_list = []
-        for para in paragraphs:
-            change_records_para, change_after_records_para = self.extract_from_paragraph(para)
-            change_records += change_records_para
-            change_after_records += change_after_records_para
-        self.sort_and_modify(change_records, change_after_records)
-        change_records = sorted(change_records, key=lambda r: r.finishDate)
-        limit = len(change_records)-1
-        i = 0
-        while i < limit:
-            if change_records[i].finishDate == change_records[i+1].finishDate:
-                del change_records[i]
-                limit -= 1
-            else:
-                i += 1
-        self.merge_record(change_records, change_after_records)
-        for record in change_records:
-            record_list.append(record)
-        return record_list
+        tag_res = self.ner_tagger.ner(paragraph, self.com_abbr_ner_dict)
+        tagged_str = tag_res.get_tagged_str()
+        # 抽取公司简称以及简称
+        new_size = self.extract_company_name(tagged_str)
+        if new_size > 0:
+            tag_res = self.ner_tagger.ner(paragraph, self.com_abbr_ner_dict)
+            tagged_str = tag_res.get_tagged_str()
+        # 抽取变动记录，变动后记录
+        change_records = self.extract_change(tagged_str)
+        change_after_records = self.extract_change_after(tagged_str)
+        return change_records, change_after_records
 
     def extract_company_name(self, paragraph):
+        '''
+        抽取股东名称以及简称，保存在 com_abbr_ner_dict 中
+        返回增加 com_abbr_ner_dict 中增加的条目数量
+        extract_from_paragraph 子例程
+        '''
         targets = re.finditer(
             r'(股东|<org>){1,2}(?P<com>.{1,28}?)(</org>)?[(（].{0,5}?简称:?("|“|<org>)?(?P<com_abbr>.{2,20}?)("|”|</org>)?[)）]',
             paragraph)
         size_before = len(self.com_abbr_ner_dict)
         for target in targets:
-            # print("===> ", target.group())
+            # 股东简称
             com_abbr = target.group("com_abbr")
+            # 股东名称
             com_name = target.group("com")
             if '<' in com_abbr or '>' in com_abbr:
                 com_abbr = self.delete_and_modify(com_abbr)
@@ -273,6 +272,9 @@ class ZengJianChiExtractor(object):
 
     @staticmethod
     def delete_and_modify(name):
+        '''
+        去除 <...> 中的内容，extract_company_name 子例程
+        '''
         new_name = ""
         state = 0
         for ch in name:
@@ -284,44 +286,19 @@ class ZengJianChiExtractor(object):
                 new_name += ch
         return new_name
 
-    def extract_from_paragraph(self, paragraph):
-        tag_res = self.ner_tagger.ner(paragraph, self.com_abbr_ner_dict)
-        tagged_str = tag_res.get_tagged_str()
-        # 抽取公司简称
-        new_size = self.extract_company_name(tagged_str)
-        if new_size > 0:
-            tag_res = self.ner_tagger.ner(paragraph, self.com_abbr_ner_dict)
-            tagged_str = tag_res.get_tagged_str()
-        change_records = self.extract_change(tagged_str)
-        change_after_records = self.extract_change_after(tagged_str)
-        return change_records, change_after_records
-
-    def merge_record(self, change_records, change_after_records):
-        if len(change_records) == 0 or len(change_after_records) == 0:
-            return
-        last_record = None
-        for record in change_records:
-            if last_record is not None and record.shareholderFullName != last_record.shareholderFullName:
-                self.merge_change_after_info(last_record, change_after_records)
-            last_record = record
-        self.merge_change_after_info(last_record, change_after_records)
-
-    @staticmethod
-    def merge_change_after_info(change_record, change_after_records):
-        for record in change_after_records:
-            if record.shareholderFullName == change_record.shareholderFullName:
-                change_record.shareNumAfterChg = record.shareNumAfterChg
-                change_record.sharePcntAfterChg = record.sharePcntAfterChg
-
     def extract_change(self, paragraph):
+        '''
+        用于抽取一个段落中的变动数量
+        extract_from_paragraph 子例程
+        '''
         records = []
         targets = re.finditer(r'(出售|减持|增持|买入)了?[^，。.,:：;!?？（）()“”"<>]*?(股票|股份|(<org>([^.。,，<>]*?)</org>))[^.。,，《》]{0,30}?<num>(?P<share_num>.{1,20}?)</num>股?',
                               paragraph)
         pat_dates = [k for k in re.finditer(r'<date>(.*?)</date>', paragraph)]
         for target in targets:
+            # 变动数量
             share_num = target.group("share_num")
             start_pos = target.start()
-            # end_pos = target.end()
             # 查找公司
             pat_com = re.compile(r'<org>(.*?)</org>')
             m_com = pat_com.findall(paragraph, 0, start_pos)
@@ -333,19 +310,26 @@ class ZengJianChiExtractor(object):
                 m_person = pat_person.findall(paragraph, 0, start_pos)
                 if m_person is not None and len(m_person) > 0:
                     shareholder = m_person[-1]
+            # 没有查找到股东名称
             if shareholder is None or len(shareholder) == 0:
                 continue
+            # 归一化公司全称简称
+            full_name, short_name = self.get_shareholder(shareholder)
             # 查找日期
             period_find = re.compile(r'。|累计|合计')
             last_date = None
             change_date = ""
             for pat_date in pat_dates:
+                # 循环至变动数量之前的最后一个时间段名词
                 if pat_date.end() < start_pos:
                     last_date = pat_date
                 else:
                     break
             if last_date is not None:
                 tmp_end = last_date.end()
+                # 日期与变动数量之间
+                #   存在句号：说明日期与变动数量很可能没有联系
+                #   存在 "累计" 等词语：
                 if len(period_find.findall(paragraph, tmp_end, start_pos)) <= 0:
                     change_date = last_date.group().split('>')[1].split('<')[0]
             # 查找变动价格
@@ -354,11 +338,15 @@ class ZengJianChiExtractor(object):
             share_price = ""
             if m_price is not None:
                 share_price = m_price.group("share_price")
-            full_name, short_name = self.get_shareholder(shareholder)
+            # 成功抽取变动记录
             records.append(ZengJianChiRecord(full_name, short_name, change_date, share_price, share_num, "", ""))
         return records
 
     def extract_change_after(self, paragraph):
+        '''
+        用于抽取变动后持股数和变动后持股比例
+        extract_from_paragraph 子例程
+        '''
         records = []
         targets = re.finditer(r'(增持(计划实施)?后|减持(计划实施)?后|变动后)[^。;；]*?持有.{0,30}?<num>(?P<share_num_after>.*?)</num>(股|万股|百万股|亿股)?',
                               paragraph)
@@ -377,19 +365,74 @@ class ZengJianChiExtractor(object):
                 m_person = pat_person.findall(paragraph, 0, end_pos)
                 if m_person is not None and len(m_person) > 0:
                     shareholder = m_person[-1]
+            # 没有查找到股东名称
             if shareholder is None or len(shareholder) == 0:
                 continue
+            # 归一化公司全称简称
+            full_name, short_name = self.get_shareholder(shareholder)
             # 查找变动后持股比例
             pat_percent_after = re.compile(r'<percent>(?P<share_percent>.*?)</percent>')
             m_percent_after = pat_percent_after.search(paragraph, start_pos)
             share_percent_after = ""
             if m_percent_after is not None:
                 share_percent_after = m_percent_after.group("share_percent")
-            full_name, short_name = self.get_shareholder(shareholder)
+            # 成功抽取变动后记录
             records.append(ZengJianChiRecord(full_name, short_name, "", "", "", share_num_after, share_percent_after))
         return records
 
+    def get_shareholder(self, shareholder):
+        '''
+        归一化公司全称简称
+        extract_change, extract_change_after 子例程
+        '''
+        if shareholder in self.com_full_dict:
+            return shareholder, self.com_full_dict.get(shareholder, "")
+        if shareholder in self.com_abbr_dict:
+            return self.com_abbr_dict.get(shareholder, ""), shareholder
+        # 股东为自然人时不需要简称
+        return shareholder, ""
+
+    def extract_from_paragraphs(self, paragraphs):
+        '''
+        从多个段落中进行抽取
+        '''
+        self.clear_com_abbr_dict()
+        change_records = []
+        change_after_records = []
+        record_list = []
+        # 对各个段落进行抽取
+        for para in paragraphs:
+            change_records_para, change_after_records_para = self.extract_from_paragraph(para)
+            change_records += change_records_para
+            change_after_records += change_after_records_para
+        # 保持各条记录中的公司全称一致
+        self.sort_and_modify(change_records, change_after_records)
+        # 对截止日期相同的记录进行去重
+        change_records = sorted(change_records, key=lambda r: r.finishDate)
+        limit = len(change_records) - 1
+        i = 0
+        while i < limit:
+            if change_records[i].finishDate == change_records[i+1].finishDate:
+                del change_records[i]
+                limit -= 1
+            else:
+                i += 1
+        # 合并变动记录，变动后记录
+        self.merge_record(change_records, change_after_records)
+        for record in change_records:
+            record_list.append(record)
+        return record_list
+
+    def clear_com_abbr_dict(self):
+        self.com_abbr_dict = {}
+        self.com_full_dict = {}
+        self.com_abbr_ner_dict = {}
+
     def sort_and_modify(self, records, change_records):
+        '''
+        保持各条记录中的公司全称一致
+        extract_from_paragraphs 子例程
+        '''
         shareholder = {}
         for record in records:
             full_name = record.shareholderFullName
@@ -398,37 +441,55 @@ class ZengJianChiExtractor(object):
                     shareholder[full_name] = 1
                 else:
                     shareholder[full_name] += 1
+        # records 中的股东全称一致
         if len(shareholder) == 1:
             for change_record in change_records:
                 change_record.shareholderFullName = records[0].shareholderFullName
+        # 有多个股东名称，需要处理冲突
         elif len(shareholder) > 1:
             shareholder_list = sorted(shareholder.items(), key=lambda r: r[1])
+            # 两个出现次数最多的公司出现次数一样
             if shareholder_list[-1][1] == shareholder_list[-2][1]:
                 return
             else:
                 real_shareholder = shareholder_list[-1][0]
             real_short = self.com_full_dict[real_shareholder]
+            # 替换 record, change_record 中的公司名称
             for record in records:
                 record.shareholderFullName = real_shareholder
                 record.shareholderShortName = real_short
             for change_record in change_records:
                 change_record.shareholderFullName = real_shareholder
 
-    def clear_com_abbr_dict(self):
-        self.com_abbr_dict = {}
-        self.com_full_dict = {}
-        self.com_abbr_ner_dict = {}
+    def merge_record(self, change_records, change_after_records):
+        '''
+        合并变动记录，变动后记录
+        extract_from_paragraphs 子例程
+        '''
+        if len(change_records) == 0 or len(change_after_records) == 0:
+            return
+        last_record = None
+        for record in change_records:
+            if last_record is not None and record.shareholderFullName != last_record.shareholderFullName:
+                self.merge_change_after_info(last_record, change_after_records)
+            last_record = record
+        self.merge_change_after_info(last_record, change_after_records)
 
-    def get_shareholder(self, shareholder):
-        # 归一化公司全称简称
-        if shareholder in self.com_full_dict:
-            return shareholder, self.com_full_dict.get(shareholder, "")
-        if shareholder in self.com_abbr_dict:
-            return self.com_abbr_dict.get(shareholder, ""), shareholder
-        # 股东为自然人时不需要简称
-        return shareholder, ""
+    @staticmethod
+    def merge_change_after_info(change_record, change_after_records):
+        '''
+        增加 change_record 中的变动后信息
+        merge_record 子例程
+        '''
+        for record in change_after_records:
+            if record.shareholderFullName == change_record.shareholderFullName:
+                change_record.shareNumAfterChg = record.shareNumAfterChg
+                change_record.sharePcntAfterChg = record.sharePcntAfterChg
 
     def extract(self, html_file_path):
+        '''
+        对 html 文件进行解析
+        '''
         # 1. 解析 Table Dict
         rs = []
         paragraphs = self.html_parser.parse_content(html_file_path)
@@ -448,12 +509,8 @@ class ZengJianChiExtractor(object):
         else:
             for record in rs:
                 full_company_name, abbr_company_name = self.get_shareholder(record.shareholderFullName)
-                # if full_company_name is not None and len(full_company_name) > 0 \
-                #         and abbr_company_name is not None and len(abbr_company_name) > 0:
                 record.shareholderFullName = full_company_name
                 record.shareholderShortName = abbr_company_name
-                # else:
-                #     record.shareholderShortName = record.shareholderFullName
         return rs
 
 
