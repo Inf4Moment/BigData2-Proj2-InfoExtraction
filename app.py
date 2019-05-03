@@ -41,8 +41,10 @@ if __name__ == "__main__":
     
     # 提取所有 html 中的记录
     zengjianchi_config_file_path = 'config/ZengJianChiConfig.json'
-    ner_model_dir_path = 'E:/WorkBench/Courses/Big-Data/Proj2-Finance/ltp_data_v3.4.0'
+    # ner_model_dir_path = 'E:/WorkBench/Courses/Big-Data/Proj2-Finance/ltp_data_v3.4.0'
+    ner_model_dir_path = '/home/swj/Tools/ltp_data_v3.4.0'
     ner_blacklist_file_path = 'config/ner_com_blacklist.txt'
 
     zjc_ex = ZengJianChiExtractor(zengjianchi_config_file_path, ner_model_dir_path, ner_blacklist_file_path)
-    extract_zengjianchi_from_html_dir(zjc_ex, '../train_data/增减持/html', './results/HodingChange.csv')
+    # extract_zengjianchi_from_html_dir(zjc_ex, '../train_data/增减持/html', './results/HodingChange.csv')
+    extract_zengjianchi_from_html_dir(zjc_ex, '../data/train_data/增减持/html', './results/HodingChange.csv')
