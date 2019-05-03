@@ -8,7 +8,7 @@ from docparser import HTMLParser
 from utils import TextUtils
 from ner import NERTagger
 
-
+# 增减持记录
 class ZengJianChiRecord(object):
     def __init__(self, shareholder_full_name, shareholder_short_name, finish_date,
                  share_price, share_num, share_num_after_chg, share_pcnt_after_chg):
@@ -32,6 +32,10 @@ class ZengJianChiRecord(object):
 
     @staticmethod
     def normalize_finish_date(text):
+        '''
+        将结束日期转换为标准格式
+        normalize 子例程
+        '''
         pattern = re.compile(r'(\d\d\d\d)[-.年](\d{1,2})[-.月](\d{1,2})日?')
         match = pattern.search(text)
         if match:
@@ -44,6 +48,10 @@ class ZengJianChiRecord(object):
 
     @staticmethod
     def normalize_num(text):
+        '''
+        将数字转换为标准格式
+        normalize 子例程
+        '''
         coeff = 1.0
         if '亿' in text:
             coeff *= 100000000
@@ -58,15 +66,6 @@ class ZengJianChiRecord(object):
         try:
             number = float(TextUtils.extract_number(text))
             number_text = '%.4f' % (number * coeff)
-            # if number_text.endswith('.0'):
-            #     return number_text[:-2]
-            # elif number_text.endswith('.00'):
-            #     return number_text[:-3]
-            # elif number_text.endswith('.000'):
-            #     return number_text[:-4]
-            # elif number_text.endswith('.0000'):
-            #     return number_text[:-5]
-            # else:
             if '.' in number_text:
                 idx = len(number_text)
                 while idx > 1 and number_text[idx - 1] == '0':
@@ -80,6 +79,9 @@ class ZengJianChiRecord(object):
             return text
 
     def normalize(self):
+        '''
+        将各项值规范化
+        '''
         if self.finishDate is not None:
             self.finishDate = self.normalize_finish_date(self.finishDate)
         if self.shareNum is not None:
@@ -90,9 +92,11 @@ class ZengJianChiRecord(object):
             self.sharePcntAfterChg = self.normalize_num(self.sharePcntAfterChg)
 
     def to_result(self):
+        '''
+        用于输出各项值
+        '''
         self.normalize()
         return "%s,\t%s,\t%s,\t%s,\t%s,\t%s,\t%s" % (
-            # return "%s(full)\t%s(short)\t%s(date)\t%s(price)\t%s(num)\t%s(numAfter)\t%s(pcntAfter)" % (
             self.shareholderFullName if self.shareholderFullName is not None else '',
             self.shareholderShortName if self.shareholderShortName is not None else '',
             self.finishDate if self.finishDate is not None else '',
@@ -102,6 +106,7 @@ class ZengJianChiRecord(object):
             self.sharePcntAfterChg if self.sharePcntAfterChg is not None else '')
 
 
+# 增减持记录提取
 class ZengJianChiExtractor(object):
 
     def __init__(self, config_file_path, ner_model_dir_path, ner_blacklist_file_path):
@@ -112,6 +117,10 @@ class ZengJianChiExtractor(object):
         self.com_full_dict = {}
         self.com_abbr_ner_dict = {}
 
+        # 读取保存在 json 中的增减持配置文件
+        # 将读取结果保存在 self.table_dict_field_pattern_dict 中
+        # 键：field_name
+        # 值：TableDictFieldPattern 对象
         with codecs.open(config_file_path, encoding='utf-8', mode='r') as fp:
             self.config = json.loads(fp.read())
         self.table_dict_field_pattern_dict = {}
@@ -137,19 +146,31 @@ class ZengJianChiExtractor(object):
                                       row_skip_pattern=row_skip_pattern)
 
     def extract_from_table_dict(self, table_dict):
+        '''
+        尝试从表格中获取有效字段
+        table_dict: HTML 解析得到的表格
+        '''
         rs = []
         if table_dict is None or len(table_dict) <= 0:
             return rs
         row_length = len(table_dict)
+        # field_col_dict：字典
+        #   键：在表头中匹配到的 field
+        #   值：对应的列数以及可能出现的单位信息
         field_col_dict = {}
+        # 可以忽略的行对应的行数：集合
         skip_row_set = set()
-        # 1. 假定第一行是表头部分则尝试进行规则匹配这一列是哪个类型的字段
+
+        # 假定第一行是表头部分则尝试进行规则匹配这一列是哪个类型的字段
         # 必须满足 is_match_pattern is True and is_match_col_skip_pattern is False
         head_row = table_dict[0]
         col_length = len(head_row)
+        # 遍历表格第一行 (表头) 的元素
         for i in range(col_length):
             text = head_row[i]
+            # 尝试匹配 table_dict_field_pattern 中的各个模式
             for (field_name, table_dict_field_pattern) in self.table_dict_field_pattern_dict.items():
+                # 匹配成功
                 if table_dict_field_pattern.is_match_pattern(text) and \
                         not table_dict_field_pattern.is_match_col_skip_pattern(text):
                     if field_name not in field_col_dict:
@@ -166,10 +187,12 @@ class ZengJianChiExtractor(object):
                                 skip_row_set.add(j)
                         except KeyError:
                             pass
+        # 没有扫描到有效的列
         if len(field_col_dict) <= 0:
             return rs
-        # 2. 遍历每个有效行，获取 record
-        exit_flag = 0
+        
+        # 遍历每个有效行，获取 record
+        exit_flag = False
         for row_index in range(1, row_length):
             if row_index in skip_row_set:
                 continue
@@ -189,7 +212,7 @@ class ZengJianChiExtractor(object):
                         record.shareNumAfterChg = self.table_dict_field_pattern_dict.get(field_name).convert(text)
                     elif field_name == 'sharePcntAfterChg':
                         record.sharePcntAfterChg = self.table_dict_field_pattern_dict.get(field_name).convert(text)
-                        exit_flag = 1
+                        exit_flag = True
                         break
                     else:
                         pass
@@ -198,9 +221,13 @@ class ZengJianChiExtractor(object):
             rs.append(record)
             if exit_flag:
                 break
+        
+        # 返回结果
         return rs
 
     def extract_from_paragraphs(self, paragraphs):
+        '''
+        '''
         self.clear_com_abbr_dict()
         change_records = []
         change_after_records = []
@@ -430,6 +457,7 @@ class ZengJianChiExtractor(object):
         return rs
 
 
+# 用于保存配置文件 field 中的一项内容
 class TableDictFieldPattern(object):
     def __init__(self, field_name, convert_method, pattern, col_skip_pattern, row_skip_pattern):
         self.field_name = field_name
@@ -445,18 +473,27 @@ class TableDictFieldPattern(object):
             self.row_skip_pattern = re.compile(row_skip_pattern)
 
     def is_match_pattern(self, text):
+        '''
+        检测 text 中是否能匹配 pattern
+        '''
         if self.pattern is None:
             return False
         match = self.pattern.search(text)
         return True if match else False
 
     def is_match_col_skip_pattern(self, text):
+        '''
+        检测 text 中是否能匹配 col_skip_pattern
+        '''
         if self.col_skip_pattern is None:
             return False
         match = self.col_skip_pattern.search(text)
         return True if match else False
 
     def is_match_row_skip_pattern(self, text):
+        '''
+        检测 text 中是否能匹配 row_skip_pattern
+        '''
         if self.row_skip_pattern is None:
             return False
         match = self.row_skip_pattern.search(text)
@@ -466,6 +503,9 @@ class TableDictFieldPattern(object):
         return self.field_name
 
     def convert(self, text):
+        '''
+        根据 convert_method 对 text 进行转换
+        '''
         if self.convert_method is None:
             return self.default_convert(text)
         elif self.convert_method == 'getStringFromText':
@@ -481,6 +521,7 @@ class TableDictFieldPattern(object):
         else:
             return self.default_convert(text)
 
+    # 各类转换方法，供 convert 调用
     @staticmethod
     def default_convert(text):
         return text
