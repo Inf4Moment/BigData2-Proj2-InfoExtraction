@@ -121,8 +121,11 @@ class Contract_Extractor(object):
             tagged_paragraphs.append(ner_obj.get_tagged_str())
         # partyB = self.extract_partyB(tagged_paragraphs)
         # return partyB
-        partyA_candidates = self.extract_partyA(tagged_paragraphs)
-        return partyA_candidates
+        # partyA_candidates = self.extract_partyA(tagged_paragraphs)
+        # return partyA_candidates
+        project_names = self.extract_project_name(tagged_paragraphs)
+        return project_names
+
 
     def extract_partyB(self, tagged_paragraphs):
         '''
@@ -168,7 +171,7 @@ class Contract_Extractor(object):
                 partyA_name = match_obj.group('partyA')
                 partyA_candidates.append(partyA_name)
         '''
-        partyA_pattern = re.compile(r'采购人|乙方|买方')
+        partyA_pattern = re.compile(r'采购人|甲方|买方')
         for text in tagged_paragraphs:
             match_objs = partyA_pattern.finditer(text)
             for match_obj in match_objs:
@@ -176,6 +179,38 @@ class Contract_Extractor(object):
                 partyA_candidates.append(partyA_name)
         return partyA_candidates
 
+    def extract_project_name(self, tagged_paragraphs):
+        project_names = []
+
+        proj_name_pattern = re.compile(r'[《](?P<proj_name>.{1,30}项目.{1,20})[》]')
+        for text in tagged_paragraphs:
+            match_objs = proj_name_pattern.finditer(text)
+            for match_obj in match_objs:
+                proj_name = match_obj.group('proj_name')
+                project_names.append(proj_name)
+
+        proj_name_pattern = re.compile(r'[“](?P<proj_name>.{1,30}项目.{1,20})[”]')
+        for text in tagged_paragraphs:
+            match_objs = proj_name_pattern.finditer(text)
+            for match_obj in match_objs:
+                proj_name = match_obj.group('proj_name')
+                project_names.append(proj_name)
+
+        return project_names
+    
+    def extract_contract_name(self, tagged_paragraphs):
+        contract_names = []
+
+        contract_pattern = re.compile(r'[《](?P<contract_name>.{1,30}合同)[》]')
+        for text in tagged_paragraphs:
+            match_objs = contract_pattern.finditer(text)
+            for match_obj in match_objs:
+                contract_name = match_obj.group('contract_name')
+                contract_names.append(contract_name)
+
+        return contract_names
+    
+    
 
 if __name__ == '__main__':
     ner_model_dir = 'E:/WorkBench/Courses/Big-Data/Proj2-Finance/ltp_data_v3.4.0'
@@ -183,7 +218,7 @@ if __name__ == '__main__':
     html_dir_path = '../train_data/重大合同/html'
     contract_extractor = Contract_Extractor(ner_model_dir, ner_blacklist_file_path)
 
-    op = 1
+    op = 3
 
     if op == 1:
         res_path = './results/Contract_partyA.csv'
@@ -209,6 +244,20 @@ if __name__ == '__main__':
                 f.write(html_id[:-5] + ',' + partyB + '\n')
                 if partyB == 'null':
                     null_count += 1
+            print(null_count)
+    elif op == 3:
+        res_path = './results/Contract_proj_name.csv'
+        with codecs.open(res_path, 'w', encoding = 'utf-8') as f:
+            f.write('id,proj_name\n')
+            null_count = 0
+            for html_id in os.listdir(html_dir_path):
+                project_names = contract_extractor.extract(os.path.join(html_dir_path, html_id))
+                if len(project_names) == 0:
+                    f.write(html_id[:-5] + ',null\n')
+                    null_count += 1
+                else:
+                    for proj_name in project_names:
+                        f.write(html_id[:-5] + ',' + proj_name + '\n')
             print(null_count)
     else:
         res = contract_extractor.extract('../train_data/重大合同/html/1122337.html')
