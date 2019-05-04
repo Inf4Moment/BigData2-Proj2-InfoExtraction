@@ -25,9 +25,9 @@ class NERTaggedText(object):
         return self.tagged_seg_list
 
     def get_filtered_tagged_seg_list(self):
-        '''
+        """
         筛选之后的具有词性标注的分词列表 (词性需要为 valid_tag_set 中的一种)
-        '''
+        """
         rs_list = []
         for tagged_seg in self.tagged_seg_list:
             if tagged_seg[1] in self.valid_tag_set:
@@ -35,10 +35,10 @@ class NERTaggedText(object):
         return rs_list
 
     def get_tagged_str(self):
-        '''
+        """
         对于 tagged_seg_list，给词性在 tag_entity_dict 中的单词打上标签
         然后拼接成文本
-        '''
+        """
         tagged_str = ""
         for word, tag in self.tagged_seg_list:
             if tag in self.tag_entity_dict:
@@ -51,10 +51,10 @@ class NERTaggedText(object):
 class NERTagger(object):
 
     def __init__(self, model_dir_path, blacklist_path):
-        '''
+        """
         model_dir_path: pyltp 模型文件路径
         blacklist_path: 黑名单文件路径
-        '''
+        """
         # 初始化相关模型文件路径
         self.model_dir_path = model_dir_path
         self.cws_model_path = os.path.join(self.model_dir_path, 'cws.model')  # 分词模型路径，模型名称为`cws.model`
@@ -81,8 +81,8 @@ class NERTagger(object):
                     self.com_blacklist.add(line.strip())
 
     def ner(self, text, entity_dict):
-        words = self.segmentor.segment(text)                    # 分词
-        post_tags = self.postagger.postag(words)                # 词性标注
+        words = self.segmentor.segment(text)  # 分词
+        post_tags = self.postagger.postag(words)  # 词性标注
         ner_tags = self.recognizer.recognize(words, post_tags)  # 命名实体识别
         entity_list = self.construct_entity_list(words, post_tags, ner_tags)
         entity_list = self.ner_tag_by_dict(entity_dict, entity_list)
@@ -100,8 +100,8 @@ class NERTagger(object):
         实体类型标签：Nh-人名；Ns-地名；Ni-机构名
         '''
         for word, post_tag, ner_tag in zip(words, post_tags, ner_tags):
-            tag = ner_tag[0]            # 位置标签
-            entity_type = ner_tag[2:]   # 实体类型标签
+            tag = ner_tag[0]  # 位置标签
+            entity_type = ner_tag[2:]  # 实体类型标签
             # 单独实体，直接加入 entity_list
             if tag == 'S':
                 entity_list.append((word, entity_type))
@@ -134,7 +134,7 @@ class NERTagger(object):
         return entity_list
 
     def ner_tag_by_dict(self, entity_dict, entity_list):
-        # ?
+        # 检测单个分词标注中，是否包含多个已知的实体，有则提取出来
         legal_tag = entity_dict.values()
         j = 0
         limit = len(entity_list)
@@ -149,13 +149,13 @@ class NERTagger(object):
                     new_entity = []
                     while k < len(long_entity) - 1:
                         has_entity = False
-                        for entity_len in range(len(long_entity)-k, 0, -1):
-                            segment = long_entity[k:k+entity_len]
+                        for entity_len in range(len(long_entity) - k, 0, -1):
+                            segment = long_entity[k:k + entity_len]
                             if segment in entity_dict:
                                 has_entity = True
                                 new_entity.append((long_entity[0:k], 'raw'))
                                 new_entity.append((segment, entity_dict[segment]))
-                                long_entity = long_entity[k+entity_len:]
+                                long_entity = long_entity[k + entity_len:]
                                 k = 0
                                 break
                         if not has_entity:
@@ -185,13 +185,13 @@ class NERTagger(object):
         while i < len(entity_list) - 1:
             has_entity = False
             for entity_len in range(4, 1, -1):
-                segment = "".join([x[0] for x in entity_list[i : i + entity_len]])
+                segment = "".join([x[0] for x in entity_list[i: i + entity_len]])
                 # 将 2 到 4 个相邻的分词合并
                 segment_uni = segment
                 if segment_uni in entity_dict:
                     has_entity = True
                     entity_list[i] = (segment, entity_dict[segment_uni])
-                    del entity_list[i + 1 : i + entity_len]
+                    del entity_list[i + 1: i + entity_len]
                     i = i + entity_len
                     break
             if not has_entity:
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     # text = '中华人民共和国中央人民政府于1949年10月1日在伟大首都北京成立了'
     ner_tagger = NERTagger("../../ltp_data_v3.4.0", "../config/ner_com_blacklist.txt")
 
-    res = ner_tagger.ner(text,{"券":"Ni"})
+    res = ner_tagger.ner(text, {"券": "Ni"})
     for ent in res.get_tagged_seg_list():
         print('\t'.join(ent))
     print(res.get_tagged_str())

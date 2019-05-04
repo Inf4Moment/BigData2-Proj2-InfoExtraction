@@ -3,10 +3,12 @@
 import codecs
 import json
 import re
+import csv
 
 from docparser import HTMLParser
 from utils import TextUtils
 from ner import NERTagger
+
 
 # 增减持记录
 class ZengJianChiRecord(object):
@@ -32,11 +34,11 @@ class ZengJianChiRecord(object):
 
     @staticmethod
     def normalize_finish_date(text):
-        '''
+        """
         将结束日期转换为标准格式
         normalize 子例程
-        '''
-        pattern = re.compile(r'(\d\d\d\d)[-.年](\d{1,2})[-.月](\d{1,2})日?')
+        """
+        pattern = re.compile(r'(\d\d\d\d)[-./年](\d{1,2})[-./月](\d{1,2})日?')
         match = pattern.search(text)
         if match:
             if len(match.groups()) == 3:
@@ -48,10 +50,10 @@ class ZengJianChiRecord(object):
 
     @staticmethod
     def normalize_num(text):
-        '''
+        """
         将数字转换为标准格式
         normalize 子例程
-        '''
+        """
         coeff = 1.0
         if '亿' in text:
             coeff *= 100000000
@@ -79,9 +81,9 @@ class ZengJianChiRecord(object):
             return text
 
     def normalize(self):
-        '''
+        """
         将各项值规范化
-        '''
+        """
         if self.finishDate is not None:
             self.finishDate = self.normalize_finish_date(self.finishDate)
         if self.shareNum is not None:
@@ -92,9 +94,9 @@ class ZengJianChiRecord(object):
             self.sharePcntAfterChg = self.normalize_num(self.sharePcntAfterChg)
 
     def to_result(self):
-        '''
+        """
         用于输出各项值
-        '''
+        """
         self.normalize()
         return "%s,%s,%s,%s,%s,%s,%s" % (
             self.shareholderFullName if self.shareholderFullName is not None else '',
@@ -109,7 +111,7 @@ class ZengJianChiRecord(object):
 # 增减持记录提取
 class ZengJianChiExtractor(object):
 
-    def __init__(self, config_file_path, ner_model_dir_path, ner_blacklist_file_path):
+    def __init__(self, config_file_path, ner_model_dir_path, ner_blacklist_file_path, public_time_path):
         self.html_parser = HTMLParser.HTMLParser()
         self.config = None
         self.ner_tagger = NERTagger.NERTagger(ner_model_dir_path, ner_blacklist_file_path)
@@ -119,6 +121,13 @@ class ZengJianChiExtractor(object):
         self.com_full_dict = {}
         # 
         self.com_abbr_ner_dict = {}
+
+        # 公告发布日期文件
+        self.public_time = {}
+        csv_reader = csv.reader(open(public_time_path, encoding='utf-8'))
+        next(csv_reader)
+        for row in csv_reader:
+            self.public_time[row[1]] = row[0]
 
         # 读取保存在 json 中的增减持配置文件
         # 将读取结果保存在 self.table_dict_field_pattern_dict 中
@@ -149,10 +158,10 @@ class ZengJianChiExtractor(object):
                                       row_skip_pattern=row_skip_pattern)
 
     def extract_from_table_dict(self, table_dict):
-        '''
+        """
         尝试从表格中获取有效字段
         table_dict: HTML 解析得到的表格
-        '''
+        """
         rs = []
         if table_dict is None or len(table_dict) <= 0:
             return rs
@@ -193,7 +202,7 @@ class ZengJianChiExtractor(object):
         # 没有扫描到有效的列
         if len(field_col_dict) <= 0:
             return rs
-        
+
         # 遍历每个有效行，获取 record
         exit_flag = False
         for row_index in range(1, row_length):
@@ -202,7 +211,8 @@ class ZengJianChiExtractor(object):
             record = ZengJianChiRecord(None, None, None, None, None, None, None)
             for (field_name, col_index) in field_col_dict.items():
                 try:
-                    text = table_dict[row_index][col_index[0]] + col_index[1]
+                    text = table_dict[row_index][col_index[0]]
+                    text += "" if col_index[1] in text else col_index[1]
                     if field_name == 'shareholderFullName':
                         record.shareholderFullName = self.table_dict_field_pattern_dict.get(field_name).convert(text)
                     elif field_name == 'finishDate':
@@ -224,14 +234,13 @@ class ZengJianChiExtractor(object):
             rs.append(record)
             if exit_flag:
                 break
-        
         # 返回结果
         return rs
 
     def extract_from_paragraph(self, paragraph):
-        '''
+        """
         从一个段落中进行抽取
-        '''
+        """
         tag_res = self.ner_tagger.ner(paragraph, self.com_abbr_ner_dict)
         tagged_str = tag_res.get_tagged_str()
         # 抽取公司简称以及简称
@@ -245,11 +254,11 @@ class ZengJianChiExtractor(object):
         return change_records, change_after_records
 
     def extract_company_name(self, paragraph):
-        '''
+        """
         抽取股东名称以及简称，保存在 com_abbr_ner_dict 中
         返回增加 com_abbr_ner_dict 中增加的条目数量
         extract_from_paragraph 子例程
-        '''
+        """
         targets = re.finditer(
             r'(股东|<org>){1,2}(?P<com>.{1,28}?)(</org>)?[(（].{0,5}?简称:?("|“|<org>)?(?P<com_abbr>.{2,20}?)("|”|</org>)?[)）]',
             paragraph)
@@ -272,9 +281,9 @@ class ZengJianChiExtractor(object):
 
     @staticmethod
     def delete_and_modify(name):
-        '''
+        """
         去除 <...> 中的内容，extract_company_name 子例程
-        '''
+        """
         new_name = ""
         state = 0
         for ch in name:
@@ -287,18 +296,20 @@ class ZengJianChiExtractor(object):
         return new_name
 
     def extract_change(self, paragraph):
-        '''
+        """
         用于抽取一个段落中的变动数量
         extract_from_paragraph 子例程
-        '''
+        """
         records = []
-        targets = re.finditer(r'(出售|减持|增持|买入)了?[^，。.,:：;!?？（）()“”"<>]*?(股票|股份|(<org>([^.。,，<>]*?)</org>))[^.。,，《》]{0,30}?<num>(?P<share_num>.{1,20}?)</num>股?',
-                              paragraph)
+        targets = re.finditer(
+            r'(出售|减持|增持|买入)了?[^，。.,:：;!?？（）()“”"<>]*?(股票|股份|(<org>([^.。,，<>]*?)</org>))[^.。,，《》]{0,30}?<num>(?P<share_num>.{1,20}?)</num>股?',
+            paragraph)
         pat_dates = [k for k in re.finditer(r'<date>(.*?)</date>', paragraph)]
         for target in targets:
             # 变动数量
             share_num = target.group("share_num")
             start_pos = target.start()
+            end_pos = target.end()
             # 查找公司
             pat_com = re.compile(r'<org>(.*?)</org>')
             m_com = pat_com.findall(paragraph, 0, start_pos)
@@ -316,7 +327,7 @@ class ZengJianChiExtractor(object):
             # 归一化公司全称简称
             full_name, short_name = self.get_shareholder(shareholder)
             # 查找日期
-            period_find = re.compile(r'。|累计|合计')
+            period_find = re.compile(r'。|(后续)|(不[低高]于)')
             last_date = None
             change_date = ""
             for pat_date in pat_dates:
@@ -328,28 +339,29 @@ class ZengJianChiExtractor(object):
             if last_date is not None:
                 tmp_end = last_date.end()
                 # 日期与变动数量之间
-                #   存在句号：说明日期与变动数量很可能没有联系
-                #   存在 "累计" 等词语：
-                if len(period_find.findall(paragraph, tmp_end, start_pos)) <= 0:
+                # 存在句号：说明日期与变动数量很可能没有联系
+                if len(period_find.findall(paragraph, tmp_end, end_pos)) <= 0:
                     change_date = last_date.group().split('>')[1].split('<')[0]
             # 查找变动价格
             pat_price = re.compile(r'(均价|(平均)?(增持|减持|成交)?(价格|股价))([:：为])?<num>(?P<share_price>.*?)</num>')
             m_price = pat_price.search(paragraph, start_pos)
+            period_find = re.compile(r'。')
             share_price = ""
-            if m_price is not None:
+            if m_price is not None and len(period_find.findall(paragraph, start_pos, m_price.end())) <= 0:
                 share_price = m_price.group("share_price")
             # 成功抽取变动记录
             records.append(ZengJianChiRecord(full_name, short_name, change_date, share_price, share_num, "", ""))
         return records
 
     def extract_change_after(self, paragraph):
-        '''
+        """
         用于抽取变动后持股数和变动后持股比例
         extract_from_paragraph 子例程
-        '''
+        """
         records = []
-        targets = re.finditer(r'(增持(计划实施)?后|减持(计划实施)?后|变动后)[^。;；]*?持有.{0,30}?<num>(?P<share_num_after>.*?)</num>(股|万股|百万股|亿股)?',
-                              paragraph)
+        targets = re.finditer(
+            r'(增持(计划实施)?后|减持(计划实施)?后|变动后)[^。;；]*?持有.{0,30}?<num>(?P<share_num_after>.*?)</num>(股|万股|百万股|亿股)?',
+            paragraph)
         for target in targets:
             share_num_after = target.group("share_num_after")
             start_pos = target.start()
@@ -373,18 +385,19 @@ class ZengJianChiExtractor(object):
             # 查找变动后持股比例
             pat_percent_after = re.compile(r'<percent>(?P<share_percent>.*?)</percent>')
             m_percent_after = pat_percent_after.search(paragraph, start_pos)
+            period_find = re.compile(r'。')
             share_percent_after = ""
-            if m_percent_after is not None:
+            if m_percent_after is not None and len(period_find.findall(paragraph, start_pos, m_percent_after.end())) <= 0:
                 share_percent_after = m_percent_after.group("share_percent")
             # 成功抽取变动后记录
             records.append(ZengJianChiRecord(full_name, short_name, "", "", "", share_num_after, share_percent_after))
         return records
 
     def get_shareholder(self, shareholder):
-        '''
+        """
         归一化公司全称简称
         extract_change, extract_change_after 子例程
-        '''
+        """
         if shareholder in self.com_full_dict:
             return shareholder, self.com_full_dict.get(shareholder, "")
         if shareholder in self.com_abbr_dict:
@@ -392,10 +405,22 @@ class ZengJianChiExtractor(object):
         # 股东为自然人时不需要简称
         return shareholder, ""
 
-    def extract_from_paragraphs(self, paragraphs):
-        '''
+    def trans(self, record, html_id):
+        date = record.finishDate
+        pattern = re.compile(r'(\d\d\d\d)[-.年](\d{1,2})[-.月](\d{1,2})日?')
+        if date is not None and len(date) > 0 and pattern.search(date) is None:
+            pattern_2 = re.compile(r'(\d\d\d\d)[-.年](\d{1,2})[-.月]')
+            if pattern_2.search(date) is not None:
+                try:
+                    record.finishDate = self.public_time[html_id.split('.')[0]]
+                except KeyError:
+                    record.finishDate = date
+        return record
+
+    def extract_from_paragraphs(self, paragraphs, html_id):
+        """
         从多个段落中进行抽取
-        '''
+        """
         self.clear_com_abbr_dict()
         change_records = []
         change_after_records = []
@@ -412,7 +437,7 @@ class ZengJianChiExtractor(object):
         limit = len(change_records) - 1
         i = 0
         while i < limit:
-            if change_records[i].finishDate == change_records[i+1].finishDate:
+            if change_records[i].finishDate == change_records[i + 1].finishDate:
                 del change_records[i]
                 limit -= 1
             else:
@@ -420,7 +445,7 @@ class ZengJianChiExtractor(object):
         # 合并变动记录，变动后记录
         self.merge_record(change_records, change_after_records)
         for record in change_records:
-            record_list.append(record)
+            record_list.append(self.trans(record, html_id))
         return record_list
 
     def clear_com_abbr_dict(self):
@@ -429,10 +454,10 @@ class ZengJianChiExtractor(object):
         self.com_abbr_ner_dict = {}
 
     def sort_and_modify(self, records, change_records):
-        '''
+        """
         保持各条记录中的公司全称一致
         extract_from_paragraphs 子例程
-        '''
+        """
         shareholder = {}
         for record in records:
             full_name = record.shareholderFullName
@@ -462,10 +487,10 @@ class ZengJianChiExtractor(object):
                 change_record.shareholderFullName = real_shareholder
 
     def merge_record(self, change_records, change_after_records):
-        '''
+        """
         合并变动记录，变动后记录
         extract_from_paragraphs 子例程
-        '''
+        """
         if len(change_records) == 0 or len(change_after_records) == 0:
             return
         last_record = None
@@ -477,23 +502,23 @@ class ZengJianChiExtractor(object):
 
     @staticmethod
     def merge_change_after_info(change_record, change_after_records):
-        '''
+        """
         增加 change_record 中的变动后信息
         merge_record 子例程
-        '''
+        """
         for record in change_after_records:
             if record.shareholderFullName == change_record.shareholderFullName:
                 change_record.shareNumAfterChg = record.shareNumAfterChg
                 change_record.sharePcntAfterChg = record.sharePcntAfterChg
 
-    def extract(self, html_file_path):
-        '''
+    def extract(self, html_file_path, html_id):
+        """
         对 html 文件进行解析
-        '''
+        """
         # 1. 解析 Table Dict
         rs = []
         paragraphs = self.html_parser.parse_content(html_file_path)
-        rs_paragraphs = self.extract_from_paragraphs(paragraphs)
+        rs_paragraphs = self.extract_from_paragraphs(paragraphs, html_id)
         for table_dict in self.html_parser.parse_table(html_file_path):
             rs_table = self.extract_from_table_dict(table_dict)
             if len(rs_table) > 0:
@@ -511,6 +536,12 @@ class ZengJianChiExtractor(object):
                 full_company_name, abbr_company_name = self.get_shareholder(record.shareholderFullName)
                 record.shareholderFullName = full_company_name
                 record.shareholderShortName = abbr_company_name
+                price_pattern = re.compile(r'[\d\\.]+')
+                if record.sharePrice is not None:
+                    m_price = price_pattern.findall(record.sharePrice)
+                    if m_price is not None:
+                        record.sharePrice = '-'.join(m_price)[:-1]
+                self.trans(record, html_id)
         return rs
 
 
@@ -530,27 +561,27 @@ class TableDictFieldPattern(object):
             self.row_skip_pattern = re.compile(row_skip_pattern)
 
     def is_match_pattern(self, text):
-        '''
+        """
         检测 text 中是否能匹配 pattern
-        '''
+        """
         if self.pattern is None:
             return False
         match = self.pattern.search(text)
         return True if match else False
 
     def is_match_col_skip_pattern(self, text):
-        '''
+        """
         检测 text 中是否能匹配 col_skip_pattern
-        '''
+        """
         if self.col_skip_pattern is None:
             return False
         match = self.col_skip_pattern.search(text)
         return True if match else False
 
     def is_match_row_skip_pattern(self, text):
-        '''
+        """
         检测 text 中是否能匹配 row_skip_pattern
-        '''
+        """
         if self.row_skip_pattern is None:
             return False
         match = self.row_skip_pattern.search(text)
@@ -560,9 +591,9 @@ class TableDictFieldPattern(object):
         return self.field_name
 
     def convert(self, text):
-        '''
+        """
         根据 convert_method 对 text 进行转换
-        '''
+        """
         if self.convert_method is None:
             return self.default_convert(text)
         elif self.convert_method == 'getStringFromText':
