@@ -1,0 +1,31 @@
+{
+  "table_dict": {
+    "fields": [
+      {
+        "fieldName": "addObject",
+        "convertMethod": "getStringFromText",
+        "pattern": "(申购|认购|发行)?(对象|人)|股东|名称|公司|中文"
+      },
+      {
+        "fieldName": "addNumber",
+        "convertMethod": "getLongFromText",
+        "pattern": "(申购|认购|发行)?(数目|数量|股数|股份数)"
+      },
+      {
+        "fieldName": "addAmount",
+        "convertMethod": "getLongFromText",
+        "pattern": "(认缴|申购|认购|发行|资)?(金额|资本|额)"
+      },
+      {
+        "fieldName": "lockPeriod",
+        "convertMethod": "getLongFromText",
+        "pattern": "锁定期|限售期"
+      },
+      {
+        "fieldName": "subscriptMethod",
+        "convertMethod": "getStringFromText",
+        "pattern": "(申购|认购)方式"
+      }
+    ]
+  }
+}
