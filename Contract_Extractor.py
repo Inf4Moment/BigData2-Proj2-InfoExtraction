@@ -91,6 +91,8 @@ class Contract_Extractor(object):
         for paragraph in paragraphs:
             # ner 打标签
             ner_obj = self.ner_tagger.ner(paragraph, {})
+            # print(ner_obj.get_tagged_str())
+            # print("*************")
             tagged_paragraphs.append(ner_obj.get_tagged_str())
 
         # 抽取各项内容
@@ -157,13 +159,31 @@ class Contract_Extractor(object):
         '''
         抽取项目名称
         '''
-        proj_name_pattern = re.compile(r'(中标项目|项目名称)([：“])(?P<proj_name>.{1,50}?)([。”）（])')
+        proj_name_pattern = re.compile(r'《(?P<proj_name>[^，。）》]{1,100}?(标|标段|项目|工程))[^，。）》]{1,10}》')
         for text in tagged_paragraphs:
             search_obj = proj_name_pattern.search(text)
             if search_obj:
-                return self.remove_tag_in_name(search_obj.group('proj_name'))
+                proj_name = self.remove_tag_in_name(search_obj.group('proj_name'))
+                if len(proj_name) > 10:
+                    return proj_name
         
-        proj_name_pattern = re.compile(r'(中标)(?P<proj_name>.{1,50}?标段[）]?)')
+        proj_name_pattern = re.compile(r'“(?P<proj_name>[^，。）》]{1,100}?(标|标段|项目|工程))[^，。）》]{1,10}”')
+        for text in tagged_paragraphs:
+            search_obj = proj_name_pattern.search(text)
+            if search_obj:
+                proj_name = self.remove_tag_in_name(search_obj.group('proj_name'))
+                if len(proj_name) > 10:
+                    return proj_name
+
+        proj_name_pattern = re.compile(r'(中标项目|项目名称)([：“])(?P<proj_name>[^，。）》]{1,100}?)([。”）（])')
+        for text in tagged_paragraphs:
+            search_obj = proj_name_pattern.search(text)
+            if search_obj:
+                proj_name = self.remove_tag_in_name(search_obj.group('proj_name'))
+                if len(proj_name) > 10:
+                    return proj_name
+
+        proj_name_pattern = re.compile(r'(中标)(?P<proj_name>[^，。）》]{1,100}?标段[）]?)')
         for text in tagged_paragraphs:
             search_obj = proj_name_pattern.search(text)
             if search_obj:
@@ -171,37 +191,39 @@ class Contract_Extractor(object):
                 pos = proj_name.find('中标')
                 if pos > -1:
                     return proj_name[pos+2:]
-                return proj_name
+                if len(proj_name) > 10:
+                    return proj_name
         
-        proj_name_pattern = re.compile(r'[《](?P<proj_name>.{1,30}?项目.{1,20}?)[》]')
+        proj_name_pattern = re.compile(r'([为])(?P<proj_name>[^，。）》]{1,60}?(标|标段|项目))')
         for text in tagged_paragraphs:
             search_obj = proj_name_pattern.search(text)
             if search_obj:
-                return self.remove_tag_in_name(search_obj.group('proj_name'))
+                proj_name = self.remove_tag_in_name(search_obj.group('proj_name'))
+                if len(proj_name) > 10:
+                    return proj_name
 
-        proj_name_pattern = re.compile(r'[“](?P<proj_name>.{1,30}?项目.{1,20}?)[”]')
-        for text in tagged_paragraphs:
-            search_obj = proj_name_pattern.search(text)
-            if search_obj:
-                return self.remove_tag_in_name(search_obj.group('proj_name'))
-        
         return ''
     
     def extract_contract_name(self, tagged_paragraphs):
         '''
         抽取合同名称
         '''
-        contract_pattern = re.compile(r'(合同名称)([：“])(?P<contract_name>.{1,50}?)([。”）（])')
+        contract_pattern = re.compile(r'(合同名称)([：“])(?P<contract_name>.{1,60}?)([。”）（])')
         contract_name = self.extract_contract_name_pattern(tagged_paragraphs, contract_pattern)
         if len(contract_name) > 0:
             return contract_name
         
-        contract_pattern = re.compile(r'(签订|签署)(了)?(?P<contract_name>.{1,30}?合同)')
+        contract_pattern = re.compile(r'(签订|签署)(了)?(?P<contract_name>.{1,60}?合同)')
         contract_name = self.extract_contract_name_pattern(tagged_paragraphs, contract_pattern)
         if len(contract_name) > 0:
             return contract_name
 
-        contract_pattern = re.compile(r'[《](?P<contract_name>.{1,30}?合同)[》]')
+        contract_pattern = re.compile(r'《(?P<contract_name>.{1,60}?合同)》')
+        contract_name = self.extract_contract_name_pattern(tagged_paragraphs, contract_pattern)
+        if len(contract_name) > 0:
+            return contract_name
+
+        contract_pattern = re.compile(r'“(?P<contract_name>.{1,60}?合同)”')
         contract_name = self.extract_contract_name_pattern(tagged_paragraphs, contract_pattern)
         if len(contract_name) > 0:
             return contract_name
@@ -304,9 +326,10 @@ class Contract_Extractor(object):
 if __name__ == '__main__':
     ner_model_dir = 'E:/WorkBench/Courses/Big-Data/Proj2-Finance/ltp_data_v3.4.0'
     ner_blacklist_file_path = 'config/ner_com_blacklist.txt'
-    html_dir_path = '../train_data/重大合同/html'
+    html_dir_path = '../hetong/重大合同/html'
     contract_extractor = Contract_Extractor(ner_model_dir, ner_blacklist_file_path)
-    res_path = './results/Contract.csv'
+
+    res_path = './results/Contract_Test.csv'
 
     with codecs.open(res_path, 'w', encoding = 'utf-8') as f:
         f.write('公告id,甲方,乙方,项目名称,合同名称,合同金额上限,合同金额下限,联合体成员\n')
@@ -373,6 +396,6 @@ if __name__ == '__main__':
                     null_count += 1
             print(null_count)
     else:
-        res = contract_extractor.extract('../train_data/重大合同/html/1626920.html')
+        res = contract_extractor.extract('../hetong/重大合同/html/713915.html')
         print(res)
     '''
