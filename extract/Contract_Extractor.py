@@ -113,7 +113,7 @@ class Contract_Extractor(object):
         '''
         partyA_candidates = []
         
-        partyA_pattern = re.compile(r'(与|和)(.*)(<org>)(?P<partyA>.{1,50}?)(</org>)(.*)(签订|签署)')
+        partyA_pattern = re.compile(r'(与|和)(.*)(<org>)?(?P<partyA>.{1,50}?)(</org>)?(.*)(签订|签署)')
         for text in tagged_paragraphs:
             match_objs = partyA_pattern.finditer(text)
             for match_obj in match_objs:

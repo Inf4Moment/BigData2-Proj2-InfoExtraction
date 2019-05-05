@@ -112,6 +112,3 @@ target/
 *.zip
 .pytest_cache/
 .coverage
-
-# results
-results/
