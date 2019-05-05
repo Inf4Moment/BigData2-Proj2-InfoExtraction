@@ -8,8 +8,9 @@ from docparser import HTMLParser
 from utils import TextUtils
 from ner import NERTagger
 
+
 # 增减持记录
-class ZengJianChiRecord(object):
+class DZRecord(object):
     def __init__(self, add_object, add_number, add_amount, lock_period, subscript_method):
         # 增发对象
         self.addObject = add_object
@@ -82,7 +83,7 @@ class ZengJianChiRecord(object):
 
 
 # 增减持记录提取
-class ZengJianChiExtractor(object):
+class DZExtractor(object):
 
     def __init__(self, config_file_path, ner_model_dir_path, ner_blacklist_file_path):
         self.html_parser = HTMLParser.HTMLParser()
@@ -126,16 +127,35 @@ class ZengJianChiExtractor(object):
         # 1. 解析 Table Dict
         rs = []
         paragraphs = self.html_parser.parse_content(html_file_path)
+        add_period, add_method = self.extract_pm(paragraphs)
         rs_paragraphs = self.extract_from_paragraphs(paragraphs)
         for table_dict in self.html_parser.parse_table(html_file_path):
             rs_table = self.extract_from_table_dict(table_dict)
             if len(rs_table) > 0:
+                for rs_t in rs_table:
+                    if rs_t.lockPeriod is None or len(rs_t.lockPeriod) < 1:
+                        rs_t.lockPeriod = add_period
+                    if rs_t.subscriptMethod is None or len(rs_t.subscriptMethod) < 1:
+                        rs_t.subscriptMethod = add_method
                 rs.extend(rs_table)
         # 2. 如果没有 Table Dict 则解析文本部分
-        if len(rs) <= 0:
-            return rs_paragraphs
-        else:
-            return rs
+        # if len(rs) <= 0:
+        #     for rs_p in rs_paragraphs:
+        #         if rs_p.lockPeriod is None or len(rs_p.lockPeriod) < 1:
+        #             rs_p.lockPeriod = add_period
+        #         if rs_p.subscriptMethod is None or len(rs_p.subscriptMethod) < 1:
+        #             rs_p.subscriptMethod = add_method
+        #     return rs_paragraphs
+        # else:
+        #     return rs
+        for rs_p in rs_paragraphs:
+            if rs_p.lockPeriod is None or len(rs_p.lockPeriod) < 1:
+                rs_p.lockPeriod = add_period
+            if rs_p.subscriptMethod is None or len(rs_p.subscriptMethod) < 1:
+                rs_p.subscriptMethod = add_method
+        rs.extend(rs_paragraphs)
+        return rs
+
 
     def extract_from_table_dict(self, table_dict):
         '''
@@ -188,7 +208,7 @@ class ZengJianChiExtractor(object):
         for row_index in range(1, row_length):
             if row_index in skip_row_set:
                 continue
-            record = ZengJianChiRecord(None, None, None, None, None, None, None)
+            record = DZRecord(None, None, None, None, None)
             for (field_name, col_index) in field_col_dict.items():
                 try:
                     text = table_dict[row_index][col_index[0]] + col_index[1]
@@ -250,7 +270,7 @@ class ZengJianChiExtractor(object):
         extract_from_paragraph 子例程
         '''
         targets = re.finditer(
-            r'(发行对象|投资对象|<org>){1,2}(?P<obj>.{1,28}?)(</org>)?',
+            r'(发行对象|企业名称|投资对象|<org>){1,2}(?P<obj>.{1,28}?)(</org>)?',
             paragraph)
         size_before = len(self.ner_dict)
         for target in targets:
@@ -268,7 +288,7 @@ class ZengJianChiExtractor(object):
         extract_from_paragraph 子例程
         '''
         records = []
-        targets = re.finditer(r'(申购|认购|发行)?.{0,10}?(数目|数量|股数|股份|股份数)[^.。,，《》]{0,30}?<num>(?P<num>.*?)</num>股?',
+        targets = re.finditer(r'(申购|认购|发行)(不超过|不少于|.{0,5})?<num>(?P<num>.*?)</num>股?',
                               paragraph)
         for target in targets:
             start_pos = target.start()
@@ -296,7 +316,7 @@ class ZengJianChiExtractor(object):
             m_price = pat_price.search(paragraph, start_pos)
             add_price = ""
             if m_price is not None:
-                add_price = m_price.group("share_price")
+                add_price = m_price.group("price")
             else:
                 m_price = pat_price.findall(paragraph)
                 if m_price is not None and len(m_price) > 0:
@@ -314,7 +334,7 @@ class ZengJianChiExtractor(object):
                     add_period = m_period[-1]
 
             # 查找方法
-            pat_method = re.compile(r'以(?P<method>.*?)认购')
+            pat_method = re.compile(r'以(?P<method>.{0,10})认购')
             m_method = pat_method.search(paragraph, start_pos)
             add_method = ""
             if m_method is not None:
@@ -325,8 +345,36 @@ class ZengJianChiExtractor(object):
                     add_method = m_method[-1]
 
             # 成功抽取变动记录
-            records.append(ZengJianChiRecord(add_obj, add_num, add_price, add_period, add_method))
+            records.append(DZRecord(add_obj, add_num, add_price, add_period, add_method))
         return records
+
+    def extract_pm(self, paragraphs):
+        add_method = ""
+        add_period = ""
+        for paragraph in paragraphs:
+            # 查找锁定期
+            if add_period == "":
+                pat_period = re.compile(r'自本次发行结束之日起(\s*)<num>(?P<period>.*?)</num>(\s*)个月内不得转让')
+                m_period = pat_period.search(paragraph)
+                if m_period is not None:
+                    add_period = m_period.group("period")
+                else:
+                    m_period = pat_period.findall(paragraph)
+                    if m_period is not None and len(m_period) > 0:
+                        add_period = m_period[-1]
+
+            # 查找方法
+            if add_method == "":
+                pat_method = re.compile(r'以(?P<method>.{0,10})认购')
+                m_method = pat_method.search(paragraph)
+                if m_method is not None:
+                    add_method = m_method.group("method")
+                else:
+                    m_method = pat_method.findall(paragraph)
+                    if m_method is not None and len(m_method) > 0:
+                        add_method = m_method[-1]
+
+        return add_period, add_method
 
     @staticmethod
     def delete_and_modify(name):

@@ -605,3 +605,4 @@ class TableDictFieldPattern(object):
     @staticmethod
     def get_decimal_range_from_table_text(text):
         return text
+

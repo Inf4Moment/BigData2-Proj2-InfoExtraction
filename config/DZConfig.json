@@ -4,17 +4,20 @@
       {
         "fieldName": "addObject",
         "convertMethod": "getStringFromText",
-        "pattern": "(申购|认购|发行)?(对象|人)|股东|名称|公司|中文"
+        "pattern": "(申购|认购|发行)?(对象|人)|股东|名称|公司|中文",
+        "rowSkipPattern": "合计|小计|总计|共计|总额|净资产"
       },
       {
         "fieldName": "addNumber",
         "convertMethod": "getLongFromText",
-        "pattern": "(申购|认购|发行)?(数目|数量|股数|股份数)"
+        "pattern": "(申购|认购|发行)?(数目|数量|股数|股份数)",
+        "rowSkipPattern": "合计|小计|总计|共计|总额|净资产"
       },
       {
         "fieldName": "addAmount",
         "convertMethod": "getLongFromText",
-        "pattern": "(认缴|申购|认购|发行|资)?(金额|资本|额)"
+        "pattern": "(认缴|申购|认购|发行|资)?(金额|资本|额)",
+        "rowSkipPattern": "合计|小计|总计|共计|总额|净资产"
       },
       {
         "fieldName": "lockPeriod",
