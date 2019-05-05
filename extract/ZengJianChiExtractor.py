@@ -46,7 +46,7 @@ class ZengJianChiRecord(object):
                 month = int(match.groups()[1])
                 day = int(match.groups()[2])
                 return '%d-%02d-%02d' % (year, month, day)
-        return text
+        return ""
 
     @staticmethod
     def normalize_num(text):
@@ -78,12 +78,32 @@ class ZengJianChiRecord(object):
                     number_text = number_text[:idx]
             return number_text
         except:
-            return text
+            return ""
+
+    @staticmethod
+    def normalize_name(text):
+        short_pattern = re.compile(r'简称')
+        name_illegal = {'"', '“', '”', '：'}
+        new_name = []
+        short_flag = 1 if len(short_pattern.findall(text)) > 0 else 0
+        range_flag = 0
+        for ch in text:
+            if short_flag == 1 and (ch == '(' or ch == '（'):
+                range_flag = 1
+            if range_flag == 0 and ch not in name_illegal:
+                new_name.append(ch)
+            if ch == ')' or ch == '）':
+                range_flag = 0
+        return ''.join(new_name)
 
     def normalize(self):
         """
         将各项值规范化
         """
+        if self.shareholderFullName is not None:
+            self.shareholderFullName = self.normalize_name(self.shareholderFullName)
+        if self.shareholderShortName is not None:
+            self.shareholderShortName = self.normalize_name(self.shareholderShortName)
         if self.finishDate is not None:
             self.finishDate = self.normalize_finish_date(self.finishDate)
         if self.shareNum is not None:
@@ -98,14 +118,18 @@ class ZengJianChiRecord(object):
         用于输出各项值
         """
         self.normalize()
-        return "%s,%s,%s,%s,%s,%s,%s" % (
-            self.shareholderFullName if self.shareholderFullName is not None else '',
-            self.shareholderShortName if self.shareholderShortName is not None else '',
-            self.finishDate if self.finishDate is not None else '',
-            self.sharePrice if self.sharePrice is not None else '',
-            self.shareNum if self.shareNum is not None else '',
-            self.shareNumAfterChg if self.shareNumAfterChg is not None else '',
-            self.sharePcntAfterChg if self.sharePcntAfterChg is not None else '')
+        if self.shareholderFullName is not None and \
+                len(self.shareholderFullName) > 1 and \
+                self.finishDate is not None and len(self.finishDate) >= 6:
+            return "%s,%s,%s,%s,%s,%s,%s" % (
+                self.shareholderFullName if self.shareholderFullName is not None else '',
+                self.shareholderShortName if self.shareholderShortName is not None else '',
+                self.finishDate if self.finishDate is not None else '',
+                self.sharePrice if self.sharePrice is not None else '',
+                self.shareNum if self.shareNum is not None else '',
+                self.shareNumAfterChg if self.shareNumAfterChg is not None else '',
+                self.sharePcntAfterChg if self.sharePcntAfterChg is not None else '')
+        return None
 
 
 # 增减持记录提取
@@ -187,7 +211,7 @@ class ZengJianChiExtractor(object):
                         not table_dict_field_pattern.is_match_col_skip_pattern(text):
                     if field_name not in field_col_dict:
                         field_col_dict[field_name] = (i, "")
-                        if '%' in text:
+                        if '%' in text or field_name == 'sharePcntAfterChg':
                             field_col_dict[field_name] = (i, '%')
                         if '万' in text:
                             field_col_dict[field_name] = (i, '万')
