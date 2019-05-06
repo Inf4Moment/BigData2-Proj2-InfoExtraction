@@ -96,15 +96,16 @@ class Contract_Extractor(object):
             tagged_paragraphs.append(ner_obj.get_tagged_str())
 
         # 抽取各项内容
-        partyA = self.extract_partyA(tagged_paragraphs)
-        partyB = self.extract_partyB(tagged_paragraphs)
-        project_name = self.extract_project_name(tagged_paragraphs)
+        # partyA = self.extract_partyA(tagged_paragraphs)
+        # partyB = self.extract_partyB(tagged_paragraphs)
+        # project_name = self.extract_project_name(tagged_paragraphs)
         contract_name = self.extract_contract_name(tagged_paragraphs)
-        amount = self.extract_amount(tagged_paragraphs)
+        # amount = self.extract_amount(tagged_paragraphs)
 
         # 组合得到的抽取内容
-        contract_record = Contract_Record(partyA, partyB, project_name, contract_name, amount)
-        return contract_record.to_result()
+        # contract_record = Contract_Record(partyA, partyB, project_name, contract_name, amount)
+        # return contract_record.to_result()
+        return contract_name
 
     # 子例程
     def extract_partyA(self, tagged_paragraphs):
@@ -159,6 +160,8 @@ class Contract_Extractor(object):
         '''
         抽取项目名称
         '''
+
+        '''
         proj_name_pattern = re.compile(r'《(?P<proj_name>[^，。）》]{1,100}?(标|标段|项目|工程))[^，。）》]{1,10}》')
         for text in tagged_paragraphs:
             search_obj = proj_name_pattern.search(text)
@@ -182,7 +185,7 @@ class Contract_Extractor(object):
                 proj_name = self.remove_tag_in_name(search_obj.group('proj_name'))
                 if len(proj_name) > 10:
                     return proj_name
-
+        '''
         proj_name_pattern = re.compile(r'(中标)(?P<proj_name>[^，。）》]{1,100}?标段[）]?)')
         for text in tagged_paragraphs:
             search_obj = proj_name_pattern.search(text)
@@ -193,7 +196,7 @@ class Contract_Extractor(object):
                     return proj_name[pos+2:]
                 if len(proj_name) > 10:
                     return proj_name
-        
+        '''
         proj_name_pattern = re.compile(r'([为])(?P<proj_name>[^，。）》]{1,60}?(标|标段|项目))')
         for text in tagged_paragraphs:
             search_obj = proj_name_pattern.search(text)
@@ -201,12 +204,13 @@ class Contract_Extractor(object):
                 proj_name = self.remove_tag_in_name(search_obj.group('proj_name'))
                 if len(proj_name) > 10:
                     return proj_name
-
+        '''
         return ''
     
     def extract_contract_name(self, tagged_paragraphs):
         '''
         抽取合同名称
+        '''
         '''
         contract_pattern = re.compile(r'(合同名称)([：“])(?P<contract_name>.{1,60}?)([。”）（])')
         contract_name = self.extract_contract_name_pattern(tagged_paragraphs, contract_pattern)
@@ -217,17 +221,17 @@ class Contract_Extractor(object):
         contract_name = self.extract_contract_name_pattern(tagged_paragraphs, contract_pattern)
         if len(contract_name) > 0:
             return contract_name
-
+        
         contract_pattern = re.compile(r'《(?P<contract_name>.{1,60}?合同)》')
         contract_name = self.extract_contract_name_pattern(tagged_paragraphs, contract_pattern)
         if len(contract_name) > 0:
             return contract_name
-
+        '''
         contract_pattern = re.compile(r'“(?P<contract_name>.{1,60}?合同)”')
         contract_name = self.extract_contract_name_pattern(tagged_paragraphs, contract_pattern)
         if len(contract_name) > 0:
             return contract_name
-
+        
         return ''
     
     def extract_contract_name_pattern(self, tagged_paragraphs, contract_pattern):
@@ -326,9 +330,10 @@ class Contract_Extractor(object):
 if __name__ == '__main__':
     ner_model_dir = 'E:/WorkBench/Courses/Big-Data/Proj2-Finance/ltp_data_v3.4.0'
     ner_blacklist_file_path = 'config/ner_com_blacklist.txt'
-    html_dir_path = '../hetong/重大合同/html'
+    html_dir_path = '../train_data/重大合同/html'
     contract_extractor = Contract_Extractor(ner_model_dir, ner_blacklist_file_path)
 
+    '''
     res_path = './results/Contract_Test.csv'
 
     with codecs.open(res_path, 'w', encoding = 'utf-8') as f:
@@ -336,9 +341,9 @@ if __name__ == '__main__':
         for html_id in os.listdir(html_dir_path):
             record = contract_extractor.extract(os.path.join(html_dir_path, html_id))
             f.write(html_id[:-5] + ',' + record + '\n')
-
     '''
-    op = 0
+
+    op = 5
 
     if op == 1:
         res_path = './results/Contract_partyA.csv'
@@ -398,4 +403,4 @@ if __name__ == '__main__':
     else:
         res = contract_extractor.extract('../hetong/重大合同/html/713915.html')
         print(res)
-    '''
+    
