@@ -24,9 +24,9 @@ __乙方__
 
 乙方名称的识别比较容易。一般来说，重大合同的公告都是由乙方发出的，所以公告的标题行很多都是 "xx公司关于xx重大合同的公告"，如下所示：
 
-![yifang1](.\img\yifang1.png)
+![yifang1](./img/yifang1.png)
 
-![yifang2](.\img\yifang2.png)
+![yifang2](./img/yifang2.png)
 
 观察经由 nerTagger 添加标签后的 html 文件发现，标题行中的公司名称一般都能正确地被识别为组织名，并且被 `<org><\org>` 分离开来。基于这个观察，我们决定将文本中第一个识别出来的组织名作为乙方名称。这个规则对所有的 html 文件都有输出 (也就是说所有 html 都能识别出组织名，尽管可能不是在标题行中识别到的)。但是这样识别出来的名称有一个问题：由于 html 解析段落时没能很好分离公告信息行以及标题行，公告信息最后的公告标号会跟标题中的公司名称黏在一起，被整个识别为一个组织。因此，需要一个额外的子程序 `remove_number_in_name()` 来去除这些可能出现的编号。
 
@@ -46,11 +46,11 @@ __甲方__
 
 +  "与|和 ... 签署|签订"：这里省略号的位置通常就是甲方，如下所示。
 
-  ![jiafang1](.\img\jiafang1.png)
+  ![jiafang1](./img/jiafang1.png)
 
 + "接到|收到 ... 发来|发出"：一般这种句式用来说明乙方收到了甲方发来的中标通知。
 
-  ![jiafang2](.\img\jiafang2.png)
+  ![jiafang2](./img/jiafang2.png)
 
 甲方的匹配由 `extract_partyA()` 完成，其主要内容就是在各个段落中寻找上述模式。不过这样找到的 "甲方" 可能会有多个，所以需要进行选择，这部分工作由 `select_partyA()` 完成。选择的策略是，对这些名称根据出现次数进行排序，出现频率较高的选为结果返回。如果有两个名称出现次数相等，就检测其之间是否存在包含关系。一般来说，由于实体识别以及规则制定的缺陷，可能会有部分匹配到的名称带有多余的单词，这样作为子串的名称才是正确的名称。如果上述策略依旧无法确定出结果，那就任意返回一个结果。
 
@@ -78,23 +78,23 @@ __项目名称__
 
 + 用书名号 《》 括起来并且以 "项目"、"标"、"标段" 或者 "工程" 等字眼结尾的 (一种较宽松的规则是只要包含这些字眼，并且这些字眼与 "》" 相隔不超过 10 个字的就选入)；
 
-  ![projname1](.\img\projname3.png)
+  ![projname1](./img/projname3.png)
 
 + 用双引号 “” 括起来并且以 "项目"、"标"、"标段" 或者 "工程" 等字眼结尾的；
 
-  ![projname1](.\img\projname2.png)
+  ![projname1](./img/projname2.png)
 
 + 明显的表明 "项目名称" 的；
 
-  ![projname1](.\img\projname1.png)
+  ![projname1](./img/projname1.png)
 
 + 说明 "中标 xx 标段" 的；
 
-  ![projname1](.\img\projname4.png)
+  ![projname1](./img/projname4.png)
 
 + "为 xx 标|标段|项目" 的。
 
-  ![projname1](.\img\projname5.png)
+  ![projname1](./img/projname5.png)
 
 ```python
 re.compile(r'《(?P<proj_name>.{1,100}?(标|标段|项目|工程))[^，。）》]{1,10}》')
